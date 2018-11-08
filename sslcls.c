@@ -55,6 +55,7 @@ const SSL_METHOD *sycSSLv2_server_method(void) {
 }
 #endif
 
+#if HAVE_SSLv3_client_method
 const SSL_METHOD *sycSSLv3_client_method(void) {
    const SSL_METHOD *result;
    Debug("SSLv3_client_method()");
@@ -86,6 +87,7 @@ const SSL_METHOD *sycSSLv23_server_method(void) {
    Debug1("SSLv23_server_method() -> %p", result);
    return result;
 }
+#endif
 
 const SSL_METHOD *sycTLSv1_client_method(void) {
    const SSL_METHOD *result;
@@ -331,6 +333,7 @@ void sycSSL_free(SSL *ssl) {
    return;
 }
 
+#ifndef OPENSSL_NO_EGD
 int sycRAND_egd(const char *path) {
    int result;
    Debug1("RAND_egd(\"%s\")", path);
@@ -338,6 +341,7 @@ int sycRAND_egd(const char *path) {
    Debug1("RAND_egd() -> %d", result);
    return result;
 }
+#endif
 
 DH *sycPEM_read_bio_DHparams(BIO *bp, DH **x, pem_password_cb *cb, void *u) {
    DH *result;

@@ -736,7 +736,9 @@ int
    char *opt_dhparam = NULL;	/* file name of DH params */
    char *opt_cafile = NULL;	/* certificate authority file */
    char *opt_capath = NULL;	/* certificate authority directory */
+#ifndef OPENSSL_NO_EGD
    char *opt_egd = NULL;	/* entropy gathering daemon socket path */
+#endif
 #if OPENSSL_VERSION_NUMBER >= 0x00908000L
    char *opt_compress = NULL;	/* compression method */
 #endif
@@ -755,7 +757,9 @@ int
    retropt_string(opts, OPT_OPENSSL_CAPATH, &opt_capath);
    retropt_string(opts, OPT_OPENSSL_KEY, &opt_key);
    retropt_string(opts, OPT_OPENSSL_DHPARAM, &opt_dhparam);
+#ifndef OPENSSL_NO_EGD
    retropt_string(opts, OPT_OPENSSL_EGD, &opt_egd);
+#endif
    retropt_bool(opts,OPT_OPENSSL_PSEUDO, &opt_pseudo);
 #if OPENSSL_VERSION_NUMBER >= 0x00908000L
    retropt_string(opts, OPT_OPENSSL_COMPRESS, &opt_compress);
@@ -891,9 +895,11 @@ int
       }
    }
 
+#ifndef OPENSSL_NO_EGD
    if (opt_egd) {
       sycRAND_egd(opt_egd);
    }
+#endif
 
    if (opt_pseudo) {
       long int randdata;
@@ -952,23 +958,22 @@ int
 	 }
 	 Error("DH_new() failed");
       } else {
-	 dh->p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
-	 dh->g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
-	 if ((dh->p == NULL) || (dh->g == NULL)) {
-	    while (err = ERR_get_error()) {
+          BIGNUM *p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
+          BIGNUM *g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
+          if(p == NULL || g == NULL) {
+              while (err = ERR_get_error()) {
 	       Warn1("BN_bin2bn(): %s",
 		     ERR_error_string(err, NULL));
 	    }
 	    Error("BN_bin2bn() failed");
-	 } else {
-	    if (sycSSL_CTX_set_tmp_dh(*ctx, dh) <= 0) {
-	       while (err = ERR_get_error()) {
-		  Warn3("SSL_CTX_set_tmp_dh(%p, %p): %s", *ctx, dh,
-			ERR_error_string(err, NULL));
-	       }
-	       Error2("SSL_CTX_set_tmp_dh(%p, %p) failed", *ctx, dh);
+	 }
+         DH_set0_pqg(dh, p, NULL, g);
+	 if (sycSSL_CTX_set_tmp_dh(*ctx, dh) <= 0) {
+	    while (err = ERR_get_error()) {
+	       Warn3("SSL_CTX_set_tmp_dh(%p, %p): %s", *ctx, dh,
+	             ERR_error_string(err, NULL));
 	    }
-	    /*! OPENSSL_free(dh->p,g)? doc does not tell so */
+	    Error2("SSL_CTX_set_tmp_dh(%p, %p) failed", *ctx, dh);
 	 }
 	 DH_free(dh);
       }
@@ -1110,7 +1115,7 @@ static int openssl_SSL_ERROR_SSL(int level, const char *funcname) {
    while (e = ERR_get_error()) {
       Debug1("ERR_get_error(): %lx", e);
       if (e == ((ERR_LIB_RAND<<24)|
-		(RAND_F_SSLEAY_RAND_BYTES<<12)|
+		(RAND_F_RAND_BYTES<<12)|
 		(RAND_R_PRNG_NOT_SEEDED)) /*0x24064064*/) {
 	 Error("too few entropy; use options \"egd\" or \"pseudo\"");
 	 stat = STAT_NORETRY;
@@ -1243,13 +1248,13 @@ static int openssl_setenv_cert_fields(const char *field, X509_NAME *name) {
       X509_NAME_ENTRY *entry;
       ASN1_OBJECT *obj;
       ASN1_STRING *data;
-      unsigned char *text;
+      unsigned const char *text;
       int nid;
       entry = X509_NAME_get_entry(name, i);
       obj  = X509_NAME_ENTRY_get_object(entry);
       data = X509_NAME_ENTRY_get_data(entry);
       nid  = OBJ_obj2nid(obj);
-      text = ASN1_STRING_data(data);
+      text = ASN1_STRING_get0_data(data);
       Debug3("SSL peer cert %s entry: %s=\"%s\"", (field[0]?field:"subject"), OBJ_nid2ln(nid), text);
       if (field != NULL && field[0] != '\0') {
          xiosetenv3("OPENSSL_X509", field, OBJ_nid2ln(nid), (const char *)text, 2, " // ");
@@ -1313,7 +1318,7 @@ static bool openssl_check_peername(X509_NAME *name, const char *peername) {
    int ind = -1;
    X509_NAME_ENTRY *entry;
    ASN1_STRING *data;
-   unsigned char *text;
+   unsigned const char *text;
    ind = X509_NAME_get_index_by_NID(name, NID_commonName, -1);
    if (ind < 0) {
       Info("no COMMONNAME field in peer certificate");	
@@ -1321,7 +1326,7 @@ static bool openssl_check_peername(X509_NAME *name, const char *peername) {
    }
    entry = X509_NAME_get_entry(name, ind);
    data = X509_NAME_ENTRY_get_data(entry);
-   text = ASN1_STRING_data(data);
+   text = ASN1_STRING_get0_data(data);
    return openssl_check_name((const char *)text, peername);
 }
 
